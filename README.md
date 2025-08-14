@@ -95,7 +95,7 @@ project101/
 
 ```bash
 git clone <repository-url>
-cd project101
+cd OwnModelOpenAIProxy
 ```
 
 ### 2. Environment Configuration
