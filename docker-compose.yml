@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15
+    container_name: byom-postgres
+    environment:
+      POSTGRES_DB: byom_ai
+      POSTGRES_USER: byom_user
+      POSTGRES_PASSWORD: byom_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - byom-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U byom_user -d byom_ai"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis for rate limiting and caching
+  redis:
+    image: redis:7-alpine
+    container_name: byom-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - byom-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Backend API
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: byom-backend
+    environment:
+      - DATABASE_URL=postgresql://byom_user:byom_password@postgres:5432/byom_ai
+      - REDIS_URL=redis://redis:6379
+      - SECRET_KEY=your-secret-key-change-in-production
+      - ENCRYPTION_KEY=your-32-byte-encryption-key-here
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - byom-network
+    volumes:
+      - ./app:/app/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Frontend React App
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: byom-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - byom-network
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000/api
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+  # Ollama (optional - for local models)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: byom-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - byom-network
+    profiles:
+      - ollama
+
+volumes:
+  postgres_data:
+  redis_data:
+  ollama_data:
+
+networks:
+  byom-network:
+    driver: bridge
